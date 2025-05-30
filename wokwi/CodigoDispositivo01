@@ -1,0 +1,88 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <DHTesp.h>
+
+char SSIDName[] = "Wokwi-GUEST";
+char SSIDPass[] = "";
+
+const int DHT_PIN = 15;
+
+char BrokerURL[] = "broker.hivemq.com";
+char BrokerUserName[] = "";
+char BrokerPassword[] = "";
+char MQTTClientName[] = "mqtt-mack-pub-sub";
+int BrokerPort = 1883;
+
+char Topico_01[] = "TESTMACK1870/Temperatura";
+char Topico_02[] = "TESTMACK1870/Umidade";
+char Topico_03[] = "TESTMACK1870/Chave";
+
+WiFiClient espClient;
+PubSubClient clienteMQTT(espClient);
+DHTesp dhtSensor;
+
+void mqttReconnect() {
+  while (!clienteMQTT.connected()) {
+    Serial.println("Conectando-se ao broker MQTT...");
+    if (clienteMQTT.connect(MQTTClientName, BrokerUserName, BrokerPassword)) {
+      Serial.println("Conectado!");
+      clienteMQTT.subscribe(Topico_03); 
+    } else {
+      Serial.print("Erro: ");
+      Serial.print(clienteMQTT.state());
+      Serial.println(" tentando novamente em 5s.");
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  clienteMQTT.setServer(BrokerURL, BrokerPort);
+  dhtSensor.setup(DHT_PIN, DHTesp::DHT22);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  Serial.begin(9600);
+  Serial.print("Conectando-se ao Wi-Fi");
+  WiFi.begin(SSIDName, SSIDPass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi conectado. IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+void loop() {
+  if (!clienteMQTT.connected()) {
+    mqttReconnect();
+  }
+  clienteMQTT.loop();
+
+  TempAndHumidity temp_umid = dhtSensor.getTempAndHumidity();
+  float temperatura = temp_umid.temperature;
+  float umidade = temp_umid.humidity;
+
+  char _t[8];
+  dtostrf(temperatura, 1, 2, _t);
+  clienteMQTT.publish(Topico_01, _t);
+  Serial.print("Temperatura publicada: ");
+  Serial.println(_t);
+
+  char _u[8];
+  dtostrf(umidade, 1, 2, _u);
+  clienteMQTT.publish(Topico_02, _u);
+  Serial.print("Umidade publicada: ");
+  Serial.println(_u);
+  clienteMQTT.publish("TESTMACK1870/Chave", "ligar");
+
+  if (temperatura > 30.0) {
+    clienteMQTT.publish(Topico_03, "ligar");
+    Serial.println("Comando publicado: ligar");
+  } else {
+    clienteMQTT.publish(Topico_03, "desligar");
+    Serial.println("Comando publicado: desligar");
+  }
+
+  delay(3000); 
+}
