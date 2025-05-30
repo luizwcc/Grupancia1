@@ -1,0 +1,269 @@
+[
+    {
+        "id": "1d5035b5ae956b49",
+        "type": "tab",
+        "label": "Monitor Ambiental Mackenzie",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "1a2545f621a03903",
+        "type": "mqtt in",
+        "z": "1d5035b5ae956b49",
+        "name": "Conecta mqtt in",
+        "topic": "TESTMACK1870/#",
+        "qos": "1",
+        "datatype": "auto-detect",
+        "broker": "15240f7ad07d0353",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 100,
+        "y": 80,
+        "wires": [
+            [
+                "732351fe6cf3a915"
+            ]
+        ]
+    },
+    {
+        "id": "8fbc612a737a7ac8",
+        "type": "http request",
+        "z": "1d5035b5ae956b49",
+        "name": "OpenWeatherMap API",
+        "method": "GET",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "https://api.openweathermap.org/data/2.5/weather?lat=-23.5475&lon=-46.6541&appid=dedf04c597e88e98098b286a0abc0016&units=metric&lang=pt_br",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 260,
+        "y": 260,
+        "wires": [
+            [
+                "f60e127203be8bce"
+            ]
+        ]
+    },
+    {
+        "id": "9f5a2b9b1487f518",
+        "type": "inject",
+        "z": "1d5035b5ae956b49",
+        "name": "Trigger a cada 10 segundos",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "10",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 140,
+        "y": 200,
+        "wires": [
+            [
+                "8fbc612a737a7ac8"
+            ]
+        ]
+    },
+    {
+        "id": "f5de508d272df00c",
+        "type": "influxdb out",
+        "z": "1d5035b5ae956b49",
+        "influxdb": "3c69bd17b21233dd",
+        "name": "Banco de Dados",
+        "measurement": "MonitorAmbiental",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "IOT",
+        "bucket": "bucket_dados",
+        "x": 1130,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "f60e127203be8bce",
+        "type": "json",
+        "z": "1d5035b5ae956b49",
+        "name": "Parse JSON",
+        "property": "payload",
+        "action": "",
+        "pretty": false,
+        "x": 390,
+        "y": 340,
+        "wires": [
+            [
+                "7b3fb3f4b5ab3e4f"
+            ]
+        ]
+    },
+    {
+        "id": "732351fe6cf3a915",
+        "type": "function",
+        "z": "1d5035b5ae956b49",
+        "name": "Processa Dados Sensor",
+        "func": "if (msg.topic === \"TESTMACK1870/Temperatura\") {\n    global.set(\"temp_sensor\", msg.payload);\n} else if (msg.topic === \"TESTMACK1870/Umidade\") {\n    global.set(\"umid_sensor\", msg.payload);\n}\n\n// Dados armazenados para debug, mas não serão usados\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 250,
+        "y": 140,
+        "wires": [
+            [
+                "660a14be0fca79e7"
+            ]
+        ]
+    },
+    {
+        "id": "7b3fb3f4b5ab3e4f",
+        "type": "function",
+        "z": "1d5035b5ae956b49",
+        "name": "Processa Dados API",
+        "func": "return {\n    payload: {\n        temperatura: msg.payload.main.temp,\n        umidade: msg.payload.main.humidity,\n        fonte: \"api\",\n        timestamp: new Date().toISOString()\n    }\n};",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 420,
+        "wires": [
+            [
+                "660a14be0fca79e7"
+            ]
+        ]
+    },
+    {
+        "id": "660a14be0fca79e7",
+        "type": "function",
+        "z": "1d5035b5ae956b49",
+        "name": "Calcula Risco Queimada",
+        "func": "if (!msg.payload || typeof msg.payload !== 'object') {\n    node.error(\"Payload inválido\", msg);\n    return null;\n}\n\nconst temp = msg.payload.temperatura;\nconst umid = msg.payload.umidade;\n\nif (temp === undefined || umid === undefined) {\n    node.error(\"Dados de temperatura ou umidade não encontrados\", msg);\n    return null;\n}\n\nlet risco = 0;\nlet mensagem = \"\";\n\nif (temp > 30 && umid < 30) {\n    risco = 3; // Alto\n    mensagem = `🚨 ALTO RISCO DE QUEIMADA! Temperatura: ${temp}°C, Umidade: ${umid}%`;\n} else if (temp > 25 && umid < 40) {\n    risco = 2; // Médio\n    mensagem = `⚠️ Risco moderado de queimada. Temperatura: ${temp}°C, Umidade: ${umid}%`;\n} else {\n    risco = 1; // Baixo\n    mensagem =  `Sem risco`;\n}\n\nmsg.payload = {\n    ...msg.payload,\n    risco_queimada: risco,\n    mensagem_alerta: mensagem,\n    indice_haines: (temp / 10) + (100 - umid) / 10\n};\n\nglobal.set(\"ultimo_risco\", msg.payload);\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 810,
+        "y": 240,
+        "wires": [
+            [
+                "55fc2d370713f460",
+                "f5de508d272df00c",
+                "d87b69e67cd9e0cc"
+            ]
+        ]
+    },
+    {
+        "id": "55fc2d370713f460",
+        "type": "node-red-contrib-whatsapp-cmb-send-message",
+        "z": "1d5035b5ae956b49",
+        "name": "WPP message",
+        "credtype": "account",
+        "account": "7f2f7e744a500309",
+        "text": "payload.mensagem_alerta",
+        "phonenumbervalue": "",
+        "apikeyvalue": "",
+        "apikeyinputtypemessage": "msg",
+        "phonenumberinputtypemessage": "msg",
+        "inputtypemessage": "msg",
+        "rejectssl": false,
+        "x": 1120,
+        "y": 160,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "d87b69e67cd9e0cc",
+        "type": "mqtt out",
+        "z": "1d5035b5ae956b49",
+        "name": "",
+        "topic": "TESTMACK1870/Dispostivo2/Temperatura",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "15240f7ad07d0353",
+        "x": 1210,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "15240f7ad07d0353",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "broker.hivemq.com",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "3c69bd17b21233dd",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "database",
+        "name": "CiroBig",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "https://us-east-1-1.aws.cloud2.influxdata.com",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "7f2f7e744a500309",
+        "type": "node-red-contrib-whatsapp-cmb-account",
+        "name": "Ciro Campos"
+    }
+]
