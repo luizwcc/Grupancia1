@@ -1,0 +1,92 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// Configurações Wi-Fi (usando rede do Wokwi)
+char SSIDName[] = "Wokwi-GUEST";
+char SSIDPass[] = "";
+
+// Configurações MQTT (mesmo broker do Dispositivo 1)
+char BrokerURL[] = "broker.hivemq.com";
+char BrokerUserName[] = "";
+char BrokerPassword[] = "";
+char MQTTClientName[] = "mqtt-mack-subscriber";
+int BrokerPort = 1883;
+
+char Topico_03[] = "TESTMACK1870/Dispostivo2/Temperatura";
+
+const int LED_PIN = 2; // LED no pino 2
+
+WiFiClient espClient;
+PubSubClient clienteMQTT(espClient);
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Mensagem recebida no tópico: ");
+  Serial.println(topic);
+
+  // Converte o payload para uma string
+  String mensagem;
+  for (int i = 0; i < length; i++) {
+    mensagem += (char)payload[i];
+  }
+
+  Serial.print("Conteúdo: ");
+  Serial.println(mensagem);
+
+  // Verifica se o tópico é o esperado
+  if (String(topic) == "TESTMACK1870/Dispostivo2/Temperatura") {
+    // Converte a string em float
+    float temperatura = mensagem.toFloat();
+
+    Serial.print("Temperatura recebida: ");
+    Serial.println(temperatura);
+
+    // Verifica se temperatura > 30 para ligar LED
+    if (temperatura > 30.0) {
+      digitalWrite(LED_PIN, HIGH);
+      Serial.println("🔥 Temperatura alta - LED ligado");
+    } else {
+      digitalWrite(LED_PIN, LOW);
+      Serial.println("🌡️ Temperatura normal - LED desligado");
+    }
+  }
+}
+
+void mqttReconnect() {
+  while (!clienteMQTT.connected()) {
+    Serial.println("Conectando-se ao broker MQTT...");
+    if (clienteMQTT.connect(MQTTClientName, BrokerUserName, BrokerPassword)) {
+      Serial.println("Conectado!");
+      clienteMQTT.subscribe(Topico_03);
+    } else {
+      Serial.print("Erro: ");
+      Serial.print(clienteMQTT.state());
+      Serial.println(" tentando novamente em 5s.");
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // Inicia com LED desligado
+
+  Serial.begin(115200);
+  Serial.print("Conectando-se ao Wi-Fi");
+  WiFi.begin(SSIDName, SSIDPass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi conectado. IP: ");
+  Serial.println(WiFi.localIP());
+
+  clienteMQTT.setServer(BrokerURL, BrokerPort);
+  clienteMQTT.setCallback(callback);
+}
+
+void loop() {
+  if (!clienteMQTT.connected()) {
+    mqttReconnect();
+  }
+  clienteMQTT.loop();
+}
